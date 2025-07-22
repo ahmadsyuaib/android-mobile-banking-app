@@ -18,6 +18,8 @@ import expo.modules.ReactNativeHostWrapper
 
 // ✅ Add this import to use your custom toast package
 import com.anonymous.StickerSmash.MyToastPackage
+import com.anonymous.StickerSmash.OverlayWindowPackage
+
 
 class MainApplication : Application(), ReactApplication {
 
@@ -28,6 +30,7 @@ class MainApplication : Application(), ReactApplication {
             val packages = PackageList(this).packages.toMutableList()
             // ✅ Register your custom toast module here
             packages.add(MyToastPackage())
+            packages.add(OverlayWindowPackage())
             return packages
           }
 

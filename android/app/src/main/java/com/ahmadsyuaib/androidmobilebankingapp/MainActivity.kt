@@ -1,61 +1,194 @@
 package com.ahmadsyuaib.androidmobilebankingapp
 
+import android.app.AlertDialog
 import android.os.Build
 import android.os.Bundle
-
+import android.content.pm.PackageManager
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
-
 import expo.modules.ReactActivityDelegateWrapper
+import java.io.FileInputStream
+import java.security.MessageDigest
 
 class MainActivity : ReactActivity() {
-  override fun onCreate(savedInstanceState: Bundle?) {
-    // Set the theme to AppTheme BEFORE onCreate to support
-    // coloring the background, status bar, and navigation bar.
-    // This is required for expo-splash-screen.
-    setTheme(R.style.AppTheme);
-    super.onCreate(null)
+
+  companion object {
+    private const val EXPECTED_PACKAGE_NAME = "com.android.securebanking"
+    private const val EXPECTED_SIGNATURE_HASH = "A1B2C3D4E5F67890ABCDEF1234567890FEDCBA0987654321"
+    private const val EXPECTED_APK_HASH = "D4E5F6A7B8C9102030405060708090A0B0C0D0E0F010203"
+    private val ALLOWED_INSTALLERS = setOf(
+      "com.android.vending",
+      "com.amazon.venezia",
+      "com.android.packageinstaller"
+    )
   }
 
-  /**
-   * Returns the name of the main component registered from JavaScript. This is used to schedule
-   * rendering of the component.
-   */
+  override fun onCreate(savedInstanceState: Bundle?) {
+    setTheme(R.style.AppTheme)
+    super.onCreate(null)
+    performIntegrityChecks()
+  }
+
   override fun getMainComponentName(): String = "main"
 
-  /**
-   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
-   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
-   */
   override fun createReactActivityDelegate(): ReactActivityDelegate {
     return ReactActivityDelegateWrapper(
-          this,
-          BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
-          object : DefaultReactActivityDelegate(
-              this,
-              mainComponentName,
-              fabricEnabled
-          ){})
+      this,
+      BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
+      object : DefaultReactActivityDelegate(
+        this,
+        mainComponentName,
+        fabricEnabled
+      ) {}
+    )
   }
 
-  /**
-    * Align the back button behavior with Android S
-    * where moving root activities to background instead of finishing activities.
-    * @see <a href="https://developer.android.com/reference/android/app/Activity#onBackPressed()">onBackPressed</a>
-    */
   override fun invokeDefaultOnBackPressed() {
-      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
-          if (!moveTaskToBack(false)) {
-              // For non-root activities, use the default implementation to finish them.
-              super.invokeDefaultOnBackPressed()
-          }
-          return
+    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+      if (!moveTaskToBack(false)) {
+        super.invokeDefaultOnBackPressed()
       }
+      return
+    }
+    super.invokeDefaultOnBackPressed()
+  }
 
-      // Use the default back button implementation on Android S
-      // because it's doing more than [Activity.moveTaskToBack] in fact.
-      super.invokeDefaultOnBackPressed()
+  private fun performIntegrityChecks() {
+    val results = mutableListOf<String>()
+    results.add(verifyPackageName())
+    results.add(verifySignature())
+    results.add(verifyAPKChecksum())
+    results.add(verifyInstaller())
+    results.add(verifyClassLoader())
+    showIntegrityResults(results)
+  }
+
+  private fun verifyPackageName(): String {
+    return try {
+      val actualPackageName = packageName
+      if (EXPECTED_PACKAGE_NAME == actualPackageName) {
+        "✅ Package Name: PASSED\n   Expected: $EXPECTED_PACKAGE_NAME\n   Actual: $actualPackageName"
+      } else {
+        "❌ Package Name: FAILED\n   Expected: $EXPECTED_PACKAGE_NAME\n   Actual: $actualPackageName"
+      }
+    } catch (e: Exception) {
+      "❌ Package Name: ERROR - ${e.message}"
+    }
+  }
+
+  private fun verifySignature(): String {
+    return try {
+      val packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+      val signatures = packageInfo.signatures
+      if (signatures.isEmpty()) {
+        return "❌ Signature: FAILED - No signatures found"
+      }
+      val md = MessageDigest.getInstance("SHA-256")
+      md.update(signatures[0].toByteArray())
+      val actualHash = bytesToHex(md.digest())
+      if (EXPECTED_SIGNATURE_HASH == actualHash) {
+        "✅ Signature Hash: PASSED\n   Hash: ${actualHash.take(16)}..."
+      } else {
+        "❌ Signature Hash: FAILED\n   Expected: ${EXPECTED_SIGNATURE_HASH.take(16)}...\n   Actual: ${actualHash.take(16)}..."
+      }
+    } catch (e: Exception) {
+      "❌ Signature Hash: ERROR - ${e.message}"
+    }
+  }
+
+  private fun verifyAPKChecksum(): String {
+    return try {
+      val apkPath = applicationInfo.sourceDir
+      val fis = FileInputStream(apkPath)
+      val md = MessageDigest.getInstance("SHA-256")
+      val buffer = ByteArray(8192)
+      var bytesRead: Int
+      while (fis.read(buffer).also { bytesRead = it } != -1) {
+        md.update(buffer, 0, bytesRead)
+      }
+      fis.close()
+      val actualHash = bytesToHex(md.digest())
+      if (EXPECTED_APK_HASH == actualHash) {
+        "✅ APK Checksum: PASSED\n   Hash: ${actualHash.take(16)}..."
+      } else {
+        "❌ APK Checksum: FAILED\n   Expected: ${EXPECTED_APK_HASH.take(16)}...\n   Actual: ${actualHash.take(16)}..."
+      }
+    } catch (e: Exception) {
+      "❌ APK Checksum: ERROR - ${e.message}"
+    }
+  }
+
+  private fun verifyInstaller(): String {
+    return try {
+      val installer = packageManager.getInstallerPackageName(packageName)
+      when {
+        installer == null -> "❌ Installer: FAILED - App was sideloaded (no installer)"
+        ALLOWED_INSTALLERS.contains(installer) -> {
+          val name = when (installer) {
+            "com.android.vending" -> "Google Play Store"
+            "com.amazon.venezia" -> "Amazon App Store"
+            "com.android.packageinstaller" -> "System Installer"
+            else -> installer
+          }
+          "✅ Installer: PASSED\n   Source: $name"
+        }
+        else -> "❌ Installer: FAILED\n   Expected: Official store\n   Actual: $installer"
+      }
+    } catch (e: Exception) {
+      "❌ Installer: ERROR - ${e.message}"
+    }
+  }
+
+  private fun verifyClassLoader(): String {
+    return try {
+      val loaderName = classLoader.javaClass.name
+      if (loaderName.contains("dalvik.system.PathClassLoader")) {
+        "✅ Class Loader: PASSED\n   Type: $loaderName"
+      } else {
+        "❌ Class Loader: FAILED\n   Expected: PathClassLoader\n   Actual: $loaderName"
+      }
+    } catch (e: Exception) {
+      "❌ Class Loader: ERROR - ${e.message}"
+    }
+  }
+
+  private fun bytesToHex(bytes: ByteArray): String {
+    return bytes.joinToString("") { "%02X".format(it) }
+  }
+
+  private fun showIntegrityResults(results: List<String>) {
+    val message = buildString {
+      appendLine("🔒 RASP Integrity Check Results")
+      appendLine("=".repeat(35))
+      appendLine()
+      results.forEach {
+        appendLine(it)
+        appendLine()
+      }
+      appendLine("=".repeat(35))
+      val failed = results.count { it.contains("❌") }
+      val passed = results.count { it.contains("✅") }
+      appendLine("Summary: $passed passed, $failed failed")
+      appendLine()
+      if (failed > 0) {
+        appendLine("⚠️ Security Warning: App integrity compromised!")
+      } else {
+        appendLine("✅ All integrity checks passed successfully!")
+      }
+    }
+
+    runOnUiThread {
+      AlertDialog.Builder(this)
+        .setTitle("🛡️ App Security Status")
+        .setMessage(message)
+        .setPositiveButton("Continue") { dialog, _ -> dialog.dismiss() }
+        .setNegativeButton("Exit App") { _, _ ->
+          android.os.Process.killProcess(android.os.Process.myPid())
+        }
+        .setCancelable(false)
+        .show()
+    }
   }
 }

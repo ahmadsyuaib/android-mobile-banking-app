@@ -15,9 +15,9 @@ import java.security.MessageDigest
 class MainActivity : ReactActivity() {
 
   companion object {
-    private const val EXPECTED_PACKAGE_NAME = "com.android.securebanking"
-    private const val EXPECTED_SIGNATURE_HASH = "A1B2C3D4E5F67890ABCDEF1234567890FEDCBA0987654321"
-    private const val EXPECTED_APK_HASH = "D4E5F6A7B8C9102030405060708090A0B0C0D0E0F010203"
+    private const val EXPECTED_PACKAGE_NAME = "com.ahmadsyuaib.androidmobilebankingapp"
+    private const val EXPECTED_SIGNATURE_HASH = "place_expected_signature_hash_here"
+    private const val EXPECTED_APK_HASH = "place_expected_apk_hash_here"
     private val ALLOWED_INSTALLERS = setOf(
       "com.android.vending",
       "com.amazon.venezia",
@@ -82,16 +82,17 @@ class MainActivity : ReactActivity() {
     return try {
       val packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
       val signatures = packageInfo.signatures
-      if (signatures.isEmpty()) {
+      if (signatures.isNullOrEmpty()) {
         return "❌ Signature: FAILED - No signatures found"
       }
       val md = MessageDigest.getInstance("SHA-256")
+      val cert = signatures[0].toByteArray()
       md.update(signatures[0].toByteArray())
       val actualHash = bytesToHex(md.digest())
       if (EXPECTED_SIGNATURE_HASH == actualHash) {
-        "✅ Signature Hash: PASSED\n   Hash: ${actualHash.take(16)}..."
+        "✅ Signature Hash: PASSED\n   Hash: ${actualHash}"
       } else {
-        "❌ Signature Hash: FAILED\n   Expected: ${EXPECTED_SIGNATURE_HASH.take(16)}...\n   Actual: ${actualHash.take(16)}..."
+        "❌ Signature Hash: FAILED\n   Expected: ${EXPECTED_SIGNATURE_HASH}\n   Actual: ${actualHash}"
       }
     } catch (e: Exception) {
       "❌ Signature Hash: ERROR - ${e.message}"
@@ -111,9 +112,9 @@ class MainActivity : ReactActivity() {
       fis.close()
       val actualHash = bytesToHex(md.digest())
       if (EXPECTED_APK_HASH == actualHash) {
-        "✅ APK Checksum: PASSED\n   Hash: ${actualHash.take(16)}..."
+        "✅ APK Checksum: PASSED\n   Hash: ${actualHash}"
       } else {
-        "❌ APK Checksum: FAILED\n   Expected: ${EXPECTED_APK_HASH.take(16)}...\n   Actual: ${actualHash.take(16)}..."
+        "❌ APK Checksum: FAILED\n   Expected: ${EXPECTED_APK_HASH}\n   Actual: ${actualHash}"
       }
     } catch (e: Exception) {
       "❌ APK Checksum: ERROR - ${e.message}"
